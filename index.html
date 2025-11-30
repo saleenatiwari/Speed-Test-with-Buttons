@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Button Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            min-height: 100vh;
+            position: relative;
+        }
+
+        /* Container that represents the 4x4 grid area */
+        .game-container {
+            width: 100%;
+            height: calc(100vh - 40px);
+            position: relative;
+            border: 2px solid #333;
+            background-color: #fff;
+        }
+
+        /* Style for all buttons */
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: 2px solid #333;
+            border-radius: 5px;
+            background-color: #4CAF50;
+            color: white;
+            position: absolute;
+            transition: all 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #45a049;
+            transform: scale(1.05);
+        }
+
+        /* Style for clicked buttons */
+        button.clicked {
+            background-color: #888;
+            cursor: pointer;
+        }
+
+        button.clicked:hover {
+            transform: scale(1.05);
+        }
+
+        /* Style for wrong click (red) - only during shake */
+        button.shaking.wrong {
+            background-color: #f44336;
+        }
+
+        /* Style for YAY buttons (green) */
+        button.yay {
+            background-color: #4CAF50;
+        }
+
+        /* Shake animation */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+            20%, 40%, 60%, 80% { transform: translateX(5px); }
+        }
+
+        button.shaking {
+            animation: shake 0.5s;
+        }
+
+        /* Start screen */
+        .start-screen {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: calc(100vh - 40px);
+            position: absolute;
+            top: 0;
+            left: 0;
+            background-color: #fff;
+            z-index: 10;
+        }
+
+        .start-screen.hidden {
+            display: none;
+        }
+
+        .start-button {
+            padding: 20px 40px;
+            font-size: 24px;
+            background-color: #4CAF50;
+            color: white;
+            border: 2px solid #333;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .start-button:hover {
+            background-color: #45a049;
+            transform: scale(1.05);
+        }
+
+        /* Timer display */
+        .timer {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 10px 20px;
+            border-radius: 5px;
+            border: 2px solid #333;
+            z-index: 5;
+        }
+
+        /* Mistake notification */
+        .mistake-notification {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background-color: #f44336;
+            color: white;
+            padding: 15px 25px;
+            border-radius: 5px;
+            font-size: 18px;
+            font-weight: bold;
+            z-index: 5;
+            animation: fadeInOut 2s;
+        }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateY(-10px); }
+            20% { opacity: 1; transform: translateY(0); }
+            80% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(-10px); }
+        }
+    </style>
+</head>
+<body>
+    <!-- Start screen -->
+    <div class="start-screen" id="startScreen">
+        <button class="start-button" id="startButton">start speed test</button>
+    </div>
+
+    <!-- Game container -->
+    <div class="game-container" id="gameContainer"></div>
+
+    <!-- Timer display -->
+    <div class="timer" id="timer" style="display: none;">00:00:000</div>
+
+    <script>
+        // Game elements
+        const gameContainer = document.getElementById('gameContainer');
+        const startScreen = document.getElementById('startScreen');
+        const startButton = document.getElementById('startButton');
+        const timerDisplay = document.getElementById('timer');
+        
+        // Track which grid positions are used (4x4 = 16 positions)
+        const gridSize = 4;
+        const usedPositions = new Set();
+        
+        // Timer variables
+        let timerInterval = null;
+        let startTime = 0;
+        let elapsedTime = 0; // in milliseconds
+        let penaltyTime = 0; // in milliseconds (5 seconds = 5000ms per mistake)
+        let isTimerRunning = false;
+        
+        // Timer functions
+        function startTimer() {
+            if (!isTimerRunning) {
+                isTimerRunning = true;
+                startTime = Date.now() - elapsedTime;
+                timerDisplay.style.display = 'block';
+                
+                timerInterval = setInterval(function() {
+                    const currentTime = Date.now();
+                    elapsedTime = currentTime - startTime + penaltyTime;
+                    updateTimerDisplay();
+                }, 1); // Update every 1ms for millisecond precision
+            }
+        }
+        
+        function stopTimer() {
+            if (isTimerRunning) {
+                isTimerRunning = false;
+                clearInterval(timerInterval);
+            }
+        }
+        
+        function resetTimer() {
+            stopTimer();
+            elapsedTime = 0;
+            penaltyTime = 0;
+            updateTimerDisplay();
+            timerDisplay.style.display = 'none';
+        }
+        
+        function addPenalty() {
+            penaltyTime += 5000; // Add 5 seconds (5000 milliseconds)
+            showMistakeNotification();
+        }
+        
+        function updateTimerDisplay() {
+            const totalMs = elapsedTime;
+            const minutes = Math.floor(totalMs / 60000);
+            const seconds = Math.floor((totalMs % 60000) / 1000);
+            const milliseconds = totalMs % 1000; // Show milliseconds (0-999)
+            
+            const minStr = String(minutes).padStart(2, '0');
+            const secStr = String(seconds).padStart(2, '0');
+            const msStr = String(milliseconds).padStart(3, '0');
+            
+            timerDisplay.textContent = `${minStr}:${secStr}:${msStr}`;
+        }
+        
+        function showMistakeNotification() {
+            // Remove existing notification if any
+            const existing = document.querySelector('.mistake-notification');
+            if (existing) {
+                existing.remove();
+            }
+            
+            // Create new notification
+            const notification = document.createElement('div');
+            notification.className = 'mistake-notification';
+            notification.textContent = 'MISTAKE: 5 seconds added!';
+            document.body.appendChild(notification);
+            
+            // Remove after animation
+            setTimeout(function() {
+                notification.remove();
+            }, 2000);
+        }
+        
+        // Calculate the size of each grid cell
+        function getCellSize() {
+            const containerWidth = gameContainer.offsetWidth;
+            const containerHeight = gameContainer.offsetHeight;
+            return {
+                width: containerWidth / gridSize,
+                height: containerHeight / gridSize
+            };
+        }
+        
+        // Get a random unused position
+        function getRandomPosition() {
+            // Keep trying until we find an unused position
+            while (true) {
+                const row = Math.floor(Math.random() * gridSize);
+                const col = Math.floor(Math.random() * gridSize);
+                const positionKey = `${row}-${col}`;
+                
+                // If this position is not used, return it
+                if (!usedPositions.has(positionKey)) {
+                    usedPositions.add(positionKey);
+                    return { row, col, key: positionKey };
+                }
+                
+                // If all positions are used, return null
+                if (usedPositions.size >= gridSize * gridSize) {
+                    return null;
+                }
+            }
+        }
+        
+        // Create a button at a specific grid position
+        function createButton(row, col) {
+            const cellSize = getCellSize();
+            
+            // Calculate pixel position based on grid position
+            const left = col * cellSize.width;
+            const top = row * cellSize.height;
+            
+            // Create the button element
+            const button = document.createElement('button');
+            button.textContent = 'click me';
+            button.style.left = left + 'px';
+            button.style.top = top + 'px';
+            // Store the grid position for resizing
+            button.dataset.row = row;
+            button.dataset.col = col;
+            
+            // Add click event listener
+            button.addEventListener('click', function() {
+                // Handle clicks on "click me" buttons
+                if (button.textContent === 'click me') {
+                    // Start timer on first click
+                    startTimer();
+                    
+                    // Change this button's text to "button"
+                    button.textContent = 'button';
+                    button.classList.add('clicked');
+                    
+                    // Get a new random position
+                    const newPosition = getRandomPosition();
+                    
+                    // If there's still space, create a new button
+                    if (newPosition) {
+                        createButton(newPosition.row, newPosition.col);
+                    } else {
+                        // All positions are filled, stop timer and show YAY!
+                        stopTimer();
+                        showYay();
+                    }
+                }
+                // Handle clicks on "button" buttons (wrong click)
+                else if (button.textContent === 'button') {
+                    // Shake and turn red
+                    button.classList.add('shaking', 'wrong');
+                    // Add penalty
+                    addPenalty();
+                    // Remove shake and wrong classes after animation
+                    setTimeout(function() {
+                        button.classList.remove('shaking', 'wrong');
+                    }, 500);
+                }
+                // Handle clicks on "YAY!" buttons (reset game)
+                else if (button.textContent === 'YAY!') {
+                    resetGame();
+                }
+            });
+            
+            // Add the button to the game container
+            gameContainer.appendChild(button);
+        }
+        
+        // Show YAY! on all buttons when game is complete
+        function showYay() {
+            const buttons = gameContainer.querySelectorAll('button');
+            buttons.forEach(function(button) {
+                button.textContent = 'YAY!';
+                button.classList.remove('clicked', 'wrong');
+                button.classList.add('yay');
+            });
+        }
+        
+        // Reset the game to start over
+        function resetGame() {
+            // Stop timer
+            resetTimer();
+            // Clear all buttons
+            gameContainer.innerHTML = '';
+            // Clear used positions
+            usedPositions.clear();
+            // Show start screen
+            startScreen.classList.remove('hidden');
+        }
+        
+        // Initialize the game
+        function initGame() {
+            // Hide start screen
+            startScreen.classList.add('hidden');
+            // Reset timer
+            resetTimer();
+            // Clear everything
+            gameContainer.innerHTML = '';
+            usedPositions.clear();
+            // Start with one random button
+            const startPosition = getRandomPosition();
+            if (startPosition) {
+                createButton(startPosition.row, startPosition.col);
+            }
+        }
+        
+        // Start button click handler
+        startButton.addEventListener('click', function() {
+            initGame();
+        });
+        
+        // Update button positions when window is resized
+        window.addEventListener('resize', function() {
+            const buttons = gameContainer.querySelectorAll('button');
+            const cellSize = getCellSize();
+            
+            buttons.forEach(function(button) {
+                // Extract position from button's style (we'll store it as data attributes)
+                const row = parseInt(button.dataset.row);
+                const col = parseInt(button.dataset.col);
+                
+                if (!isNaN(row) && !isNaN(col)) {
+                    button.style.left = col * cellSize.width + 'px';
+                    button.style.top = row * cellSize.height + 'px';
+                }
+            });
+        });
+    </script>
+</body>
+</html>
+
